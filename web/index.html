@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kindred — the happiness ledger</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='5' fill='%23f0a44a'/></svg>">
+  <link rel="stylesheet" href="/assets/kindred.css">
+</head>
+<body>
+  <main class="login-wrap">
+    <section class="login-story">
+      <div class="mark"><span class="dot"></span> KINDRED</div>
+
+      <div>
+        <h1 class="serif">Your happiness, accounted for.</h1>
+        <p>
+          We track everything that matters to the economy and almost nothing that matters to a
+          human life. Kindred is a five-sense agent that turns the rituals you already have —
+          the coffee, the walk, the shared cup — into a ledger you can actually read.
+        </p>
+        <div class="senses-row">
+          <div class="sense-chip">👁️ <b>Sight</b> · the ambient reframe</div>
+          <div class="sense-chip">👂 <b>Hearing</b> · the gentle chime</div>
+          <div class="sense-chip">✋ <b>Touch</b> · the weight of a ritual</div>
+          <div class="sense-chip">👃 <b>Smell</b> · the scent of a moment</div>
+          <div class="sense-chip">👅 <b>Taste</b> · the shared cup</div>
+        </div>
+      </div>
+
+      <p class="tiny faint" style="margin:0">
+        Personal ledger → team ledger → enterprise signal. Operationalises PERMA+4 through
+        rituals instead of surveys.
+      </p>
+    </section>
+
+    <section class="login-panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-judge" aria-selected="true">Judge access</button>
+        <button role="tab" id="tab-member" aria-selected="false">Team member</button>
+      </div>
+
+      <form id="judge-form">
+        <h2 style="font-size:19px;margin-bottom:6px">Reviewing Kindred?</h2>
+        <p class="muted tiny" style="margin:0 0 16px">
+          One passcode opens the full demo: a live personal ledger, the team layer, and the
+          enterprise signal view. Nothing to install.
+        </p>
+        <label for="passcode">Judge passcode</label>
+        <input id="passcode" type="password" value="kindred" autocomplete="off" autofocus>
+        <p class="error" id="judge-error"></p>
+        <button class="btn primary" style="width:100%" type="submit">Open the ledger</button>
+      </form>
+
+      <form id="member-form" hidden>
+        <h2 style="font-size:19px;margin-bottom:6px">Sign in</h2>
+        <label for="email">Email</label>
+        <input id="email" type="email" value="aina@kindred.app" autocomplete="username">
+        <div style="height:12px"></div>
+        <label for="password">Password</label>
+        <input id="password" type="password" value="kindred" autocomplete="current-password">
+        <p class="error" id="member-error"></p>
+        <button class="btn primary" style="width:100%" type="submit">Sign in</button>
+
+        <p class="tiny faint" style="margin:20px 0 8px">Demo accounts — all use the password <code>kindred</code></p>
+        <div class="accounts" id="accounts"></div>
+      </form>
+    </section>
+  </main>
+
+  <script type="module" src="/assets/login.js"></script>
+</body>
+</html>

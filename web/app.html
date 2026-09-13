@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kindred</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='5' fill='%23f0a44a'/></svg>">
+  <link rel="stylesheet" href="/assets/kindred.css">
+</head>
+<body>
+  <div class="phone-shell">
+    <header class="topbar">
+      <div class="mark"><span class="dot"></span> KINDRED</div>
+      <div style="display:flex;align-items:center;gap:9px">
+        <span class="pill" id="engine-pill">…</span>
+        <a class="pill" href="/dashboard" title="Team &amp; enterprise ledger">Dashboard</a>
+      </div>
+    </header>
+
+    <main id="screen" class="screen">
+      <p class="skeleton">Opening the ledger…</p>
+    </main>
+  </div>
+
+  <nav class="tabbar" id="tabbar"></nav>
+  <script type="module" src="/assets/app.js"></script>
+</body>
+</html>
