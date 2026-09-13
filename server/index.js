@@ -6,7 +6,7 @@ import { routes } from './routes.js';
 import { sseHandler } from './bus.js';
 import { currentUser } from './auth.js';
 import { seed } from './seed.js';
-import { lanAddresses, primaryAddress } from './net.js';
+import { lanAddresses, primaryAddress, publicOrigin } from './net.js';
 import { svg as qrSvg } from './qr.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -22,7 +22,9 @@ try {
   }
 } catch { /* no .env, fine */ }
 
-console.log(seed().seeded ? '· seeded demo org' : '· using existing ledger');
+const seeded = seed();
+console.log(seeded.seeded ? '· seeded demo org' : '· using existing ledger');
+if (seeded.practices) console.log(`· added ${seeded.practices} curated evidence-backed practices`);
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -74,11 +76,28 @@ const server = http.createServer(async (req, res) => {
   const path = url.pathname.replace(/\/+$/, '') || '/';
   const key = `${req.method} ${path}`;
 
+  // CORS for native and Expo-web clients. Deliberately no
+  // Access-Control-Allow-Credentials: that is what keeps `*` safe here, because
+  // browsers will not attach the session cookie cross-origin. Native clients
+  // authenticate with `Authorization: Bearer <token>`, which is only ever sent
+  // on purpose, so cross-origin requests cannot ride on an existing session.
+  if (path.startsWith('/api/') || path === '/qr.svg') {
+    res.setHeader('access-control-allow-origin', '*');
+    res.setHeader('vary', 'origin');
+    res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
+    res.setHeader('access-control-allow-headers', 'content-type, authorization, ngrok-skip-browser-warning');
+    res.setHeader('access-control-max-age', '600');
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      return res.end();
+    }
+  }
+
   try {
     if (path === '/api/events') return sseHandler(req, res);
 
     if (path === '/qr.svg') {
-      const target = url.searchParams.get('url') || `http://${primaryAddress()}:${PORT}/app`;
+      const target = url.searchParams.get('url') || `${publicOrigin(req, PORT)}/app`;
       try {
         const body = qrSvg(target, { scale: Number(url.searchParams.get('scale')) || 8 });
         res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'no-store' });
@@ -122,6 +141,7 @@ const server = http.createServer(async (req, res) => {
 // 0.0.0.0 so a phone on the same network can reach the laptop running this.
 server.listen(PORT, '0.0.0.0', () => {
   const engine = process.env.OPENAI_API_KEY ? 'openai' : 'local reframe engine';
+  const research = process.env.EXA_API_KEY ? 'exa search connected' : 'curated set only (no EXA_API_KEY)';
   const lan = lanAddresses();
   const host = primaryAddress();
 
@@ -151,5 +171,6 @@ ${onThisMachine}${onOtherDevices}
   judge access  passcode "${process.env.JUDGE_PASSCODE || 'kindred'}"
   agent brain   ${engine}
   team layer    ${process.env.SLACK_WEBHOOK_URL ? 'slack webhook connected' : 'in-app #kindred channel'}
+  evidence      ${research}
 `);
 });

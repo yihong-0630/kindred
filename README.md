@@ -80,6 +80,25 @@ Everyone who signs in with the judge passcode shares one account, which acts on
 the demo ledger — so several judges can scan the same QR at once and all see the
 same story move.
 
+## Mobile / APK clients
+
+A native client (React Native, or anything else) talks to the same backend over
+a public tunnel, authenticating with a bearer token instead of the web app's
+cookie. Full contract in **[MOBILE.md](MOBILE.md)**. The short version:
+
+```bash
+npm start          # terminal 1
+npm run tunnel     # terminal 2 — ngrok
+npm run tunnel:url # the https:// URL to build into the app
+```
+
+`GET /api/mobile/config` returns the API base, required headers and endpoint map
+at runtime, so a new tunnel URL never needs an app rebuild. Both login endpoints
+return `{ token, user }`; send it as `Authorization: Bearer <token>`.
+
+The pairing QR follows the tunnel automatically — open the login page through the
+ngrok URL and the QR encodes the public address rather than the LAN one.
+
 ## The Happiness API
 
 The finance metaphor is the architecture, not decoration — it all lives in
