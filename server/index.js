@@ -1,3 +1,7 @@
+// First, and deliberately: this populates process.env before any module below
+// reads it. Moving it lower silently breaks PORT and KINDRED_SECRET.
+import './env.js';
+
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { join, extname, normalize, dirname } from 'node:path';
@@ -12,15 +16,6 @@ import { svg as qrSvg } from './qr.js';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const webDir = join(root, 'web');
 const PORT = Number(process.env.PORT) || 4000;
-
-// Load .env if present — no dependency, just the five keys we care about.
-try {
-  const env = await readFile(join(root, '.env'), 'utf8');
-  for (const line of env.split('\n')) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
-  }
-} catch { /* no .env, fine */ }
 
 const seeded = seed();
 console.log(seeded.seeded ? '· seeded demo org' : '· using existing ledger');
@@ -140,7 +135,10 @@ const server = http.createServer(async (req, res) => {
 
 // 0.0.0.0 so a phone on the same network can reach the laptop running this.
 server.listen(PORT, '0.0.0.0', () => {
-  const engine = process.env.OPENAI_API_KEY ? 'openai' : 'local reframe engine';
+  const modelKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+  const modelSlug = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'openai/gpt-4o-mini';
+  const via = process.env.OPENROUTER_API_KEY ? ' via openrouter' : '';
+  const engine = modelKey ? `${modelSlug}${via}` : 'local reframe engine';
   const research = process.env.EXA_API_KEY ? 'exa search connected' : 'curated set only (no EXA_API_KEY)';
   const lan = lanAddresses();
   const host = primaryAddress();

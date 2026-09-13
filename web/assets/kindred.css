@@ -120,6 +120,8 @@ label { display: block; font-size: 12px; letter-spacing: .08em; text-transform: 
 .tabbar button[aria-selected="true"] { color: var(--amber); }
 .tabbar span.ic { font-size: 17px; }
 
+.card h3.greet { text-transform: none; letter-spacing: -.01em; font-size: 14.5px; color: var(--ink-dim); font-weight: 500; line-height: 1.45; max-width: 26ch; margin: 0 auto; }
+
 .balance-card { position: relative; overflow: hidden; text-align: center; padding: 26px 18px 22px; }
 .balance-card::after { content: ""; position: absolute; inset: -60% -20% auto -20%; height: 180px; background: radial-gradient(closest-side, rgba(240,164,74,.20), transparent); }
 .balance-card .stat { font-size: 62px; }
@@ -231,3 +233,166 @@ tr.clickable:hover { background: rgba(255,255,255,.03); cursor: pointer; }
 .pair-pop .card { max-width: 380px; text-align: center; box-shadow: var(--shadow); }
 .pair-pop img { border-radius: 10px; background: var(--ink); margin: 8px 0 12px; max-width: 100%; height: auto; }
 .pair-pop .pair-url { display: block; text-align: center; overflow-wrap: anywhere; word-break: normal; }
+
+/* The citation table: a wide, scrolling modal over the same backdrop. */
+.pair-pop .card.cite-pop { max-width: 860px; width: min(92vw, 860px); max-height: 84vh; text-align: left; display: flex; flex-direction: column; padding: 18px 18px 14px; }
+.cite-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+.cite-scroll { overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); }
+.cite-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cite-table th { position: sticky; top: 0; z-index: 1; background: var(--panel); text-align: left; padding: 10px 10px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-faint); border-bottom: 1px solid var(--line); }
+.cite-table td { padding: 10px; vertical-align: top; border-bottom: 1px solid var(--line); }
+.cite-table tr:last-child td { border-bottom: 0; }
+.cite-title { max-width: 42ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cite-table .meta { margin-top: 3px; }
+@media (max-width: 640px) { .cite-title { max-width: 24ch; } .cite-table { font-size: 12px; } }
+
+/* ---------------------------------------------------------- the check-in
+   A conversation, so it is laid out like one: Kindred on the left, the
+   person on the right, and the composer pinned under it. */
+
+.checkin-card { padding: 16px 14px 14px; }
+.checkin-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+.pill.toggle { cursor: pointer; }
+.pill.toggle.on { color: var(--amber); border-color: rgba(240,164,74,.35); }
+
+.thread {
+  display: flex; flex-direction: column; gap: 9px;
+  margin: 14px 0 4px; max-height: 46vh; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+  padding-right: 4px;
+}
+.thread::-webkit-scrollbar { width: 5px; }
+.thread::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+.msg { display: flex; }
+.msg.me { justify-content: flex-end; }
+
+.bubble {
+  max-width: 84%; padding: 10px 13px; border-radius: 15px;
+  font-size: 14.5px; line-height: 1.55;
+  animation: rise .22s ease both;
+}
+.msg.kindred .bubble {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-bottom-left-radius: 5px; color: var(--ink);
+}
+.msg.me .bubble {
+  background: linear-gradient(180deg, rgba(240,164,74,.19), rgba(240,164,74,.11));
+  border: 1px solid rgba(240,164,74,.3); border-bottom-right-radius: 5px;
+}
+.bubble.summary {
+  font-family: var(--serif); font-size: 16px; line-height: 1.6;
+  background: linear-gradient(180deg, rgba(143,184,201,.13), rgba(143,184,201,.06));
+  border-color: rgba(143,184,201,.3); max-width: 96%;
+}
+.bubble.error { border-color: rgba(224,112,95,.45); color: var(--risk); }
+.by-voice { opacity: .55; font-size: 11px; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+.bubble.typing { display: flex; gap: 4px; padding: 13px 14px; }
+.bubble.typing i {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint);
+  animation: blink 1.3s infinite ease-in-out;
+}
+.bubble.typing i:nth-child(2) { animation-delay: .18s; }
+.bubble.typing i:nth-child(3) { animation-delay: .36s; }
+@keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+
+.composer { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip {
+  padding: 6px 11px; border-radius: 999px; font-size: 12.5px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-dim);
+  transition: border-color .15s, color .15s;
+}
+.chip:hover:not(:disabled) { border-color: rgba(240,164,74,.45); color: var(--ink); }
+.chip:disabled { opacity: .45; cursor: default; }
+
+.composer-row { display: flex; gap: 8px; align-items: center; }
+.checkin-input {
+  flex: 1; min-width: 0; padding: 11px 13px; border-radius: 11px;
+  border: 1px solid var(--line); background: var(--ground); color: var(--ink);
+  font: inherit; font-size: 15px;   /* 16px floor stops iOS zooming on focus */
+}
+.checkin-input:focus { outline: none; border-color: rgba(240,164,74,.5); }
+.checkin-input::placeholder { color: var(--ink-faint); }
+
+.mic {
+  flex: 0 0 auto; width: 42px; height: 42px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+  font-size: 17px; line-height: 1; display: grid; place-items: center;
+}
+.mic.on {
+  border-color: var(--risk); color: var(--risk);
+  animation: pulse 1.25s infinite ease-in-out;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224,112,95,.42); }
+  50%      { box-shadow: 0 0 0 9px rgba(224,112,95,0); }
+}
+.btn.send { flex: 0 0 auto; padding: 11px 16px; }
+.btn.small { padding: 6px 12px; font-size: 12.5px; }
+
+/* --------------------------------------------------- recommended actions */
+
+.actions { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+
+.action-card {
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel-2); overflow: hidden;
+  transition: border-color .18s;
+}
+.action-card.open { border-color: rgba(240,164,74,.32); }
+.action-card.taken { opacity: .68; }
+
+.action-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 13px; background: none; border: 0; color: inherit; text-align: left;
+}
+.action-head { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+.action-n { font-family: var(--serif); font-size: 21px; line-height: 1.15; flex: 0 0 auto; }
+.action-title { font-size: 14.5px; line-height: 1.45; }
+.action-meta { font-size: 11.5px; color: var(--ink-faint); margin-top: 4px; letter-spacing: .02em; }
+.chev { color: var(--ink-faint); flex: 0 0 auto; font-size: 12px; }
+
+.action-body { padding: 0 13px 13px 13px; border-top: 1px solid var(--line); }
+.steps {
+  margin: 13px 0 0; padding-left: 20px;
+  font-size: 14px; line-height: 1.65; color: var(--ink);
+}
+.steps li { margin-bottom: 6px; }
+.steps li::marker { color: var(--amber); font-variant-numeric: tabular-nums; }
+
+.why {
+  margin: 13px 0 0; font-family: var(--serif); font-size: 14.5px;
+  line-height: 1.6; color: var(--ink-dim);
+}
+.reason { margin: 8px 0 0; font-style: italic; line-height: 1.6; }
+
+.action-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-top: 14px; flex-wrap: wrap;
+}
+.source {
+  font-size: 11.5px; color: var(--chime); text-decoration: none;
+  border-bottom: 1px dotted rgba(143,184,201,.4); padding-bottom: 1px;
+}
+.source:hover { color: var(--ink); border-bottom-style: solid; }
+
+/* The tab bar dot: a conversation is waiting. */
+.tabbar button.has-dot { position: relative; }
+.tabbar button.has-dot::after {
+  content: ''; position: absolute; top: 7px; right: calc(50% - 17px);
+  width: 6px; height: 6px; border-radius: 50%; background: var(--amber);
+  box-shadow: 0 0 7px rgba(240,164,74,.85);
+}
+
+@media (max-width: 420px) {
+  .thread { max-height: 42vh; }
+  .bubble { font-size: 14px; }
+}
+
+.sources { display: flex; align-items: baseline; gap: 3px; flex-wrap: wrap; font-size: 11.5px; min-width: 0; }
+.sources .source { white-space: nowrap; }

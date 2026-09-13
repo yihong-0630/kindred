@@ -1,6 +1,6 @@
 import { api, el, $, clear, when, subscribe } from './api.js';
 
-const state = { layer: location.hash.slice(1) || 'team', me: null, team: null, org: null, channel: null, scan: null };
+const state = { layer: location.hash.slice(1) || 'team', me: null, team: null, org: null, channel: null, scan: null, evidence: null, harvesting: null };
 const view = $('#view');
 const fmt = (n) => (Math.round(n * 10) / 10).toFixed(1);
 const KIND_COLOR = { solo: 'var(--solo)', social: 'var(--social)', physical: 'var(--physical)', reflective: 'var(--reflective)' };
@@ -84,11 +84,11 @@ function teamView() {
     el('section', { class: 'card' },
       el('div', { style: 'display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;justify-content:space-between' },
         el('div', { style: 'max-width:56ch' },
-          el('h3', {}, 'Scan for a shared cup'),
+          el('h3', {}, 'Coffee matching'),
           el('p', { class: 'muted tiny', style: 'margin:10px 0 0;line-height:1.6' },
             'Kindred looks for two people who are both low at the same time and spends its one message of the day on them. ' +
-            'The tea is not the point. The pause is the product.')),
-        el('button', { class: 'btn primary', id: 'scan-btn', onclick: runScan }, 'Run the scan')
+            'The coffee is not the point. The pause is the product.')),
+        el('button', { class: 'btn primary', id: 'scan-btn', onclick: runScan }, 'Run coffee matching')
       ),
       t.teaPair ? el('p', { class: 'tiny faint', style: 'margin:14px 0 0' },
         `Currently drifting: ${t.teaPair.map((p) => `${p.name} (${p.hoursSinceSocial}h since a shared ritual)`).join(' · ')}`) : null,
@@ -155,7 +155,7 @@ function teamView() {
                       el('span', { class: 'tiny faint', style: 'font-weight:400' },
                         `${m.audience || m.user_name || 'team'} · ${when(m.created_at)} · ${m.engine}`)),
                     el('div', { class: `body ${m.kind === 'invite' ? 'invite' : ''}` }, m.text))))
-            : el('p', { class: 'muted tiny' }, 'No team messages yet. Run the scan.'))
+            : el('p', { class: 'muted tiny' }, 'No team messages yet. Run coffee matching.'))
       ),
       el('section', { class: 'card' },
         el('h3', {}, 'Shared rituals'),
@@ -175,7 +175,7 @@ function teamView() {
 
 async function runScan() {
   const btn = $('#scan-btn');
-  btn.disabled = true; btn.textContent = 'Scanning the team…';
+  btn.disabled = true; btn.textContent = 'Matching the team…';
   try {
     state.scan = await api('/api/agent/scan', { method: 'POST', body: { teamId: state.team.team.id } });
     state.channel = await api('/api/channel');
@@ -294,6 +294,106 @@ async function setupPairing() {
   };
 }
 
+// ------------------------------------------------------- the evidence library
+//
+// Everything Kindred recommends in the morning check-in traces to a source.
+// This is that library, and the button that widens it.
+
+const EVIDENCE_LABEL = {
+  rct: 'randomised trial', study: 'study', review: 'review',
+  guidance: 'clinical guidance', editorial: 'expert write-up'
+};
+
+/** A hand-entered URL should never be able to blank the whole table. */
+const hostOf = (url) => {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url.slice(0, 40); }
+};
+
+/**
+ * The citation table itself. The bars say how much evidence there is; this says
+ * what it actually is — title, publisher and the live URL, straight from what
+ * Exa returned. Truncated on the server, and it says so.
+ */
+async function openCitations() {
+  const btn = $('#cite-btn');
+  btn.disabled = true; btn.textContent = 'Opening…';
+
+  let data;
+  try {
+    data = await api('/api/citations?limit=60');
+  } catch (err) {
+    // A 404 here means the server predates this endpoint — say so rather than
+    // leaving a button that looks dead.
+    state.citeError = err.status === 404
+      ? 'Server is running older code — restart it to load the citation table.'
+      : 'Could not load the citations.';
+    render();
+    setTimeout(() => { state.citeError = null; render(); }, 7000);
+    return;
+  }
+  state.citeError = null;
+  btn.disabled = false; btn.textContent = 'Show the citations';
+
+  const pop = el('div', { class: 'pair-pop', onclick: () => pop.remove() },
+    el('section', { class: 'card cite-pop', onclick: (e) => e.stopPropagation() },
+      el('div', { class: 'cite-head' },
+        el('div', {},
+          el('h3', {}, 'The citation table'),
+          el('p', { class: 'tiny faint', style: 'margin:8px 0 0' },
+            `Showing ${data.shown} of ${data.total}, strongest sources first. Every row is a live link.`)),
+        el('button', { class: 'btn small', onclick: () => pop.remove() }, 'Close')
+      ),
+      el('div', { class: 'cite-scroll' },
+        el('table', { class: 'cite-table' },
+          el('thead', {}, el('tr', {},
+            el('th', {}, 'Title'), el('th', {}, 'Publisher'), el('th', {}, 'Link'))),
+          el('tbody', {}, data.citations.map((c) =>
+            el('tr', {},
+              el('td', {},
+                el('div', { class: 'cite-title', title: c.title }, c.title),
+                el('div', { class: 'meta' },
+                  EVIDENCE_LABEL[c.evidence] || c.evidence,
+                  c.engine === 'exa' ? ' · exa' : ' · hand-entered',
+                  c.link_status === 'blocked' ? ' · bot-walled' : '')),
+              el('td', { class: 'muted' }, c.publisher),
+              el('td', {},
+                el('a', { class: 'source', href: c.url, target: '_blank', rel: 'noopener noreferrer', title: c.url },
+                  hostOf(c.url) + ' ↗')))))
+        )
+      )
+    )
+  );
+  document.body.append(pop);
+}
+
+function evidenceView() {
+  const e = state.evidence;
+  if (!e) return null;
+  const { stats, research } = e;
+  const top = stats.publishers.slice(0, 10);
+  const max = Math.max(1, ...top.map((p) => p.n));
+
+  return el('section', { class: 'card' },
+    el('h3', {}, 'Evidence library'),
+    el('p', { class: 'muted tiny', style: 'margin:9px 0 14px;line-height:1.7' },
+      `${stats.total} recommendable actions, resting on ${stats.citations + stats.total} citations. `,
+      `${stats.harvested} were found by Exa across an allowlist of research and clinical publishers; `,
+      `${stats.curated} are hand-entered. ${stats.verified} links verified, ${stats.dead} dead.`),
+
+    el('div', { class: 'bars' }, top.map((p) =>
+      el('div', { class: 'bar-row' },
+        el('span', { class: 'muted', title: p.publisher }, p.publisher),
+        el('div', { class: 'bar' }, el('i', { style: `width:${Math.max(3, (p.n / max) * 100)}%` })),
+        el('span', { class: 'v' }, String(p.n))))),
+
+    el('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:16px;flex-wrap:wrap' },
+      el('button', { class: 'btn', id: 'cite-btn', onclick: openCitations }, 'Show the citations'),
+      research.enabled ? null : el('span', { class: 'pill' }, 'no EXA_API_KEY — curated set only'),
+      state.citeError ? el('span', { class: 'tiny', style: 'color:var(--risk)' }, state.citeError) : null
+    )
+  );
+}
+
 // ----------------------------------------------------------------- chrome
 
 function renderTabs() {
@@ -313,23 +413,26 @@ function renderTabs() {
 
 function render() {
   renderTabs();
-  clear(view).append(...(state.layer === 'org' ? orgView() : teamView()).filter(Boolean));
+  const panels = state.layer === 'org' ? orgView() : teamView();
+  clear(view).append(...[...panels, evidenceView()].filter(Boolean));
 }
 
 (async function boot() {
   state.me = await api('/api/me');
   $('#who').textContent =
     `${state.me.user.avatar} ${state.me.user.name} · ${state.me.team?.name || 'no team'} · ${state.me.team?.org_name || ''} · ` +
-    `${state.me.engine === 'openai' ? 'GPT brain' : 'local brain'} · ${state.me.slack ? 'Slack connected' : 'in-app #kindred'}`;
+    `${state.me.engine === 'openai' ? String(state.me.model || 'model').split('/').pop() : 'local brain'} · ${state.me.slack ? 'Slack connected' : 'in-app #kindred'}`;
   $('#logout').onclick = async () => { await api('/api/auth/logout', { method: 'POST' }); location.href = '/'; };
 
   setupPairing();
 
-  const [team, channel, ledger] = await Promise.all([
-    api('/api/team'), api('/api/channel'), api('/api/ledger')
+  const [team, channel, ledger, practices] = await Promise.all([
+    api('/api/team'), api('/api/channel'), api('/api/ledger'),
+    api('/api/practices').catch(() => null)
   ]);
   state.team = team;
   state.channel = channel;
+  if (practices) state.evidence = { stats: practices.stats, research: practices.research };
   state.permaCache = ledger.ledger.perma;
   if (state.layer === 'org' && state.me.canSeeOrg) state.org = await api('/api/org').catch((e) => e.data);
   render();
