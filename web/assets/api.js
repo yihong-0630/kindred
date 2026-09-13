@@ -1,8 +1,17 @@
+// ngrok's free tier serves an interstitial to anything with a browser
+// User-Agent, which would hand our fetches HTML instead of JSON. The header is
+// ignored by every other host, so it costs nothing to always send it.
+const BASE_HEADERS = { 'ngrok-skip-browser-warning': 'true' };
+
 export async function api(path, options = {}) {
   const res = await fetch(path, {
     credentials: 'same-origin',
-    headers: options.body ? { 'content-type': 'application/json' } : {},
     ...options,
+    headers: {
+      ...BASE_HEADERS,
+      ...(options.body ? { 'content-type': 'application/json' } : {}),
+      ...(options.headers || {})
+    },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   if (res.status === 401 && !path.startsWith('/api/auth')) {

@@ -3,10 +3,16 @@ import { currentUser, issueToken, login, judgeLogin, sessionCookie, clearCookie 
 import { RITUALS, BY_KEY, SENSES, PERMA } from './rituals.js';
 import { ledgerFor, momentsFor, balanceOf, streakOf } from './ledger.js';
 import { teamLedger, orgLedger, findTeaPair } from './team.js';
-import { reframeMoment, weeklyStatement, teaInvite, actuationFor, engineName } from './agent.js';
+import { reframeMoment, weeklyStatement, teaInvite, actuationFor, engineName, checkinSummary, recommendationNote } from './agent.js';
+import {
+  planQuestions, QUESTIONS, readSignals, recordAnswer, openCheckin, answersFor,
+  finishCheckin, localSummary, todaysCheckin, recentCheckins, localDay
+} from './checkin.js';
+import { recommendFor, saveRecommendations, recommendationsFor, acceptRecommendation, uptakeFor } from './recommend.js';
+import { harvest, researchEnabled, practiceStats, verifyAllLinks, TOPICS } from './research.js';
 import { postToSlack } from './slack.js';
 import { emit } from './bus.js';
-import { lanAddresses, primaryAddress } from './net.js';
+import { lanAddresses, primaryAddress, publicOrigin, isTunnelled } from './net.js';
 import { svg as qrSvg } from './qr.js';
 
 const now = () => new Date().toISOString();
@@ -14,6 +20,8 @@ const json = (res, code, body) => {
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
 };
+const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, avatar: u.avatar, team_id: u.team_id });
+
 const requireUser = (req, res) => {
   const user = currentUser(req);
   if (!user) { json(res, 401, { error: 'not_authenticated' }); return null; }
@@ -52,15 +60,19 @@ export const routes = {
   'POST /api/auth/login': async (req, res, { body }) => {
     const user = login(body.email, body.password);
     if (!user) return json(res, 401, { error: 'bad_credentials' });
-    res.setHeader('set-cookie', sessionCookie(issueToken(user.id)));
-    json(res, 200, { user: { id: user.id, name: user.name, email: user.email, role: user.role, avatar: user.avatar, team_id: user.team_id } });
+    const token = issueToken(user.id);
+    res.setHeader('set-cookie', sessionCookie(token));
+    // The cookie serves the web app; `token` is here for native clients, which
+    // have no cookie jar and send it back as `Authorization: Bearer <token>`.
+    json(res, 200, { token, user: publicUser(user) });
   },
 
   'POST /api/auth/judge': async (req, res, { body }) => {
     const user = judgeLogin(body.passcode);
     if (!user) return json(res, 401, { error: 'bad_passcode' });
-    res.setHeader('set-cookie', sessionCookie(issueToken(user.id)));
-    json(res, 200, { user: { id: user.id, name: user.name, email: user.email, role: user.role, avatar: user.avatar, team_id: user.team_id } });
+    const token = issueToken(user.id);
+    res.setHeader('set-cookie', sessionCookie(token));
+    json(res, 200, { token, user: publicUser(user) });
   },
 
   'POST /api/auth/logout': async (req, res) => {
@@ -129,6 +141,182 @@ export const routes = {
     emit('moment', { userId: user.id, moment });
 
     json(res, 201, { moment, reframe, engine, actuation, nudge, ledger: ledgerFor(user) });
+  },
+
+  // -------------------------------------------------------- the daily check-in
+  //
+  // Opening the app is a conversation, not a dashboard. The client asks for
+  // today's check-in, gets the next unanswered question, and posts answers back
+  // one at a time so a half-finished conversation survives a closed tab.
+
+  'GET /api/checkin/today': async (req, res) => {
+    const actor = requireUser(req, res); if (!actor) return;
+    const user = effectiveUser(actor);
+    const checkin = todaysCheckin(user.id);
+    const answers = checkin ? answersFor(checkin.id) : [];
+    const signals = answers.length ? readSignals(answers) : { mood: 3, energy: 'steady', social: 'neutral', themes: [], intent: null };
+    const script = planQuestions(signals);
+    const asked = new Set(answers.map((a) => a.question_key));
+    const next = script.find((q) => !asked.has(q.key)) || null;
+
+    json(res, 200, {
+      day: localDay(),
+      checkin,
+      answers,
+      done: Boolean(checkin?.completed),
+      // The first launch of the day is the only time Kindred speaks first.
+      greeting: !checkin || !answers.length ? QUESTIONS.feeling.spoken : null,
+      question: next && { key: next.key, text: next.text(), chips: next.chips },
+      step: answers.length + 1,
+      total: script.length,
+      summary: checkin?.summary || null,
+      recommendations: checkin ? recommendationsFor(checkin.id) : [],
+      engine: engineName()
+    });
+  },
+
+  'POST /api/checkin/answer': async (req, res, { body }) => {
+    const actor = requireUser(req, res); if (!actor) return;
+    const user = effectiveUser(actor);
+    const answer = String(body.answer ?? '').trim();
+    if (!answer) return json(res, 400, { error: 'empty_answer' });
+
+    const checkin = openCheckin(user.id);
+    if (checkin.completed) return json(res, 409, { error: 'already_completed', checkin });
+
+    const asked = new Set(answersFor(checkin.id).map((a) => a.question_key));
+    const question = QUESTIONS[body.questionKey];
+    if (!question) return json(res, 400, { error: 'unknown_question' });
+    if (asked.has(question.key)) return json(res, 409, { error: 'already_answered' });
+
+    recordAnswer(checkin.id, {
+      questionKey: question.key, question: body.question || question.text(),
+      answer, modality: body.modality
+    });
+
+    const answers = answersFor(checkin.id);
+    const signals = readSignals(answers);
+    const script = planQuestions(signals);
+    const answeredKeys = new Set(answers.map((a) => a.question_key));
+    const next = script.find((q) => !answeredKeys.has(q.key)) || null;
+
+    if (next) {
+      return json(res, 200, {
+        done: false, signals,
+        question: { key: next.key, text: next.text(), chips: next.chips },
+        step: answers.length + 1, total: script.length
+      });
+    }
+
+    // Last answer in: read it back, then recommend.
+    const { text: summary, engine } = await checkinSummary({
+      name: user.name, signals, answers, fallback: localSummary(signals, user.name)
+    });
+    finishCheckin(checkin.id, signals, summary);
+
+    const ledger = ledgerFor(user);
+    const picks = recommendFor({ user, signals, ledger });
+    // The model gets to say why this one today; the ranking reason is the fallback.
+    for (const p of picks) {
+      const note = await recommendationNote({ name: user.name, signals, practice: p, fallback: p.reason });
+      p.reason = note.text;
+    }
+    saveRecommendations(user.id, checkin.id, picks);
+    saveNudge({ scope: 'personal', user_id: user.id, team_id: user.team_id, channel: 'app', kind: 'statement', text: summary, engine });
+    emit('checkin', { userId: user.id, mood: signals.mood, energy: signals.energy });
+
+    json(res, 200, {
+      done: true, signals, summary, engine,
+      checkin: get('SELECT * FROM checkins WHERE id = ?', checkin.id),
+      recommendations: recommendationsFor(checkin.id),
+      step: answers.length, total: script.length
+    });
+  },
+
+  /** Demo affordance: clear today's conversation and start it again. */
+  'POST /api/checkin/restart': async (req, res) => {
+    const actor = requireUser(req, res); if (!actor) return;
+    const user = effectiveUser(actor);
+    const checkin = todaysCheckin(user.id);
+    if (checkin) run('DELETE FROM checkins WHERE id = ?', checkin.id);
+    json(res, 200, { ok: true, greeting: QUESTIONS.feeling.spoken });
+  },
+
+  'GET /api/checkins': async (req, res) => {
+    const actor = requireUser(req, res); if (!actor) return;
+    const user = effectiveUser(actor);
+    json(res, 200, { checkins: recentCheckins(user.id, 21), uptake: uptakeFor(user.id) });
+  },
+
+  // ---------------------------------------------------- recommended actions
+
+  'POST /api/recommendations/accept': async (req, res, { body }) => {
+    const actor = requireUser(req, res); if (!actor) return;
+    const user = effectiveUser(actor);
+    const rec = get('SELECT * FROM recommendations WHERE id = ? AND user_id = ?', Number(body.id), user.id);
+    if (!rec) return json(res, 404, { error: 'no_such_recommendation' });
+    const practice = get('SELECT * FROM practices WHERE id = ?', rec.practice_id);
+
+    // Taking an evidence-backed action is a ritual — post it to the ledger so
+    // the recommendation and the currency it produced are the same object.
+    let moment = null, reframe = null, actuation = null;
+    const ritual = practice.ritual_key ? BY_KEY[practice.ritual_key] : null;
+    if (body.log !== false && ritual) {
+      const mood = Math.max(1, Math.min(5, Number(body.mood) || 4));
+      const company = ritual.kind === 'social' ? 'with' : 'alone';
+      const meaning = +(ritual.base * (0.75 + mood / 10) * (company === 'with' ? 1.15 : 1)).toFixed(2);
+      const prior = momentsFor(user.id, 30);
+      const out = await reframeMoment({
+        ritualKey: ritual.key, mood, company, note: practice.action,
+        balance: balanceOf(prior), streak: streakOf(prior)
+      });
+      reframe = out.text;
+      run(`INSERT INTO moments (user_id, ritual_key, label, sense, kind, meaning, mood, company, invested, note, reframe, source, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,'app',?)`,
+        user.id, ritual.key, ritual.label, ritual.sense, ritual.kind, meaning, mood, company,
+        ritual.invested, practice.action, reframe, now());
+      moment = get('SELECT * FROM moments ORDER BY id DESC LIMIT 1');
+      actuation = recordActuation(user.id, actuationFor(ritual.key));
+      emit('moment', { userId: user.id, moment });
+    }
+
+    acceptRecommendation(rec.id, user.id, moment?.id ?? null);
+    json(res, 200, { ok: true, moment, reframe, actuation, ledger: ledgerFor(user) });
+  },
+
+  // --------------------------------------------------- the evidence library
+
+  'GET /api/practices': async (req, res, { url }) => {
+    const user = requireUser(req, res); if (!user) return;
+    const tag = url.searchParams.get('tag');
+    const rows = all("SELECT * FROM practices WHERE link_status != 'dead' ORDER BY credibility DESC, id");
+    json(res, 200, {
+      practices: tag ? rows.filter((p) => p.tags.split(',').includes(tag)) : rows,
+      stats: practiceStats(),
+      research: { enabled: researchEnabled(), topics: TOPICS.length }
+    });
+  },
+
+  /**
+   * Run the Exa harvest. Guarded to leads and judges — it spends API credit and
+   * rewrites the evidence library everyone else reads.
+   */
+  'POST /api/research/harvest': async (req, res) => {
+    const user = requireUser(req, res); if (!user) return;
+    if (!canSeeOrg(user)) return json(res, 403, { error: 'forbidden', hint: 'Harvesting is restricted to team leads and judges.' });
+    if (!researchEnabled()) return json(res, 503, { error: 'no_exa_key', hint: 'Set EXA_API_KEY in .env and restart.' });
+    try {
+      const report = await harvest({ onProgress: (e) => emit('harvest', { topic: e.slug, kept: e.kept, error: e.error }) });
+      json(res, 200, { ...report, stats: practiceStats() });
+    } catch (err) {
+      json(res, 502, { error: 'harvest_failed', message: String(err.message || err) });
+    }
+  },
+
+  'POST /api/research/verify': async (req, res) => {
+    const user = requireUser(req, res); if (!user) return;
+    if (!canSeeOrg(user)) return json(res, 403, { error: 'forbidden' });
+    json(res, 200, { ...(await verifyAllLinks()), stats: practiceStats() });
   },
 
   'GET /api/statement': async (req, res) => {
@@ -205,12 +393,55 @@ export const routes = {
    */
   'GET /api/pairing': async (req, res, { url }) => {
     const port = url.port || process.env.PORT || 4000;
-    const host = primaryAddress();
+    const origin = publicOrigin(req, port);
     json(res, 200, {
-      appUrl: `http://${host}:${port}/app`,
-      dashboardUrl: `http://${host}:${port}/dashboard`,
+      appUrl: `${origin}/app`,
+      dashboardUrl: `${origin}/dashboard`,
+      origin,
+      tunnelled: isTunnelled(req),
       addresses: lanAddresses().map((a) => ({ ...a, url: `http://${a.address}:${port}` })),
-      reachable: host !== 'localhost'
+      reachable: origin !== `http://localhost:${port}`
+    });
+  },
+
+  /**
+   * What a packaged APK asks for on first run so it does not have to be rebuilt
+   * every time the tunnel URL changes. The app stores `apiBase` and sends
+   * `Authorization: Bearer <token>` from POST /api/auth/login or /api/auth/judge.
+   */
+  'GET /api/mobile/config': async (req, res, { url }) => {
+    const port = url.port || process.env.PORT || 4000;
+    const origin = publicOrigin(req, port);
+    json(res, 200, {
+      apiBase: origin,
+      auth: {
+        mode: 'bearer',
+        loginPath: '/api/auth/login',
+        judgePath: '/api/auth/judge',
+        header: 'Authorization: Bearer <token>',
+        note: 'Both login endpoints return { token, user }. Cookies are for the web app only.'
+      },
+      // ngrok's free tier serves a browser interstitial unless this is present.
+      requiredHeaders: isTunnelled(req) ? { 'ngrok-skip-browser-warning': 'true' } : {},
+      endpoints: {
+        me: '/api/me',
+        rituals: '/api/rituals',
+        ledger: '/api/ledger',
+        logMoment: 'POST /api/moments',
+        statement: '/api/statement',
+        team: '/api/team',
+        org: '/api/org',
+        senses: '/api/senses',
+        channel: '/api/channel',
+        events: '/api/events'
+      },
+      features: {
+        liveEvents: true,
+        slack: Boolean(process.env.SLACK_WEBHOOK_URL),
+        agentEngine: engineName()
+      },
+      ritualCount: RITUALS.length,
+      serverTime: now()
     });
   },
 

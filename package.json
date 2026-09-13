@@ -2,12 +2,18 @@
   "name": "kindred",
   "version": "0.1.0",
   "private": true,
-  "description": "Kindred — The Happiness Ledger. A five-sense ritual agent with a personal, team and enterprise ledger.",
+  "description": "Kindred \u2014 The Happiness Ledger. A five-sense ritual agent with a personal, team and enterprise ledger.",
   "type": "module",
-  "engines": { "node": ">=22.5" },
+  "engines": {
+    "node": ">=22.5"
+  },
   "scripts": {
     "start": "node --no-warnings server/index.js",
     "dev": "node --no-warnings --watch server/index.js",
-    "reseed": "node --no-warnings server/seed.js --force"
+    "reseed": "node --no-warnings server/seed.js --force",
+    "harvest": "node --no-warnings server/harvest.js",
+    "verify-sources": "node --no-warnings server/harvest.js --verify-only",
+    "tunnel": "ngrok http ${PORT:-4000} --log=stdout",
+    "tunnel:url": "curl -s http://127.0.0.1:4040/api/tunnels | node -e \"let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).tunnels[0].public_url))\""
   }
 }
