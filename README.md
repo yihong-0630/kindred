@@ -14,7 +14,7 @@ Then open **http://localhost:4000** — that is the entry point for everything.
 | **Entry point** | `http://localhost:4000/` — login + the pitch |
 | **Phone app** | `http://localhost:4000/app` |
 | **Dashboard** | `http://localhost:4000/dashboard` (team + enterprise layers) |
-| **Judge access** | passcode `kindred` — one field, straight into the full demo |
+| **Judge access** | passcode from `JUDGE_PASSCODE` (default `kindred`) — one field, straight into the full demo |
 | **Team accounts** | `aina@kindred.app` … `rob@kindred.app`, password `kindred` |
 
 The database seeds itself on first boot: 4 teams, 12 people, three weeks of
@@ -33,6 +33,52 @@ ritual history with real patterns planted in it. `npm run reseed` starts over.
 5. Jump to the **phone app**, log a ritual, watch the reframe arrive, the balance
    move, and the sense tile in **Room** light up.
 6. Back on **Today**, press **Run the audit** for the weekly statement.
+
+## Demo on two devices (phone + laptop)
+
+The server binds to `0.0.0.0`, so anything on the same wifi can reach it. On
+boot it prints the LAN URL alongside the localhost one:
+
+```
+── on another device, same wifi ──────────────
+en0         http://10.0.0.12:4000
+phone app   http://10.0.0.12:4000/app
+```
+
+**The fast way:** open `/` on the laptop — the login screen shows a QR for the
+phone app. Scan it, and the phone lands on the login, then straight into `/app`.
+Mid-demo you can pull the same QR up from **Pair a phone** in the dashboard
+header. (The QR is generated in `server/qr.js` — no dependency, no CDN, no
+third-party service seeing your URL.)
+
+**Suggested split:**
+
+| Device | Signed in as | Shows |
+|---|---|---|
+| Phone | `aina@kindred.app` / `kindred` | `/app` — log rituals, watch reframes land |
+| Laptop | judge passcode | `/dashboard` — team ledger on the projector |
+
+The two stay in sync over SSE with no refresh: log a ritual on the phone and the
+laptop's team capital, member table and `#kindred` channel all move within a
+second. Run the scan on the laptop and the phone gets the invite as a toast.
+
+**If the phone cannot reach it:**
+
+- **macOS firewall.** The first external connection usually triggers an "allow
+  incoming connections" prompt for `node` — click Allow. Test it before you are
+  on stage, because a prompt nobody clicks looks like a broken demo.
+- **Guest/conference wifi** often has client isolation, which blocks phone →
+  laptop entirely. Fallback that needs no software: turn on the phone's hotspot
+  and join the laptop to it, then restart the server so it picks up the new
+  address.
+- **Check reachability** from any device on the network:
+  ```
+  curl http://<laptop-ip>:4000/api/health
+  ```
+
+Everyone who signs in with the judge passcode shares one account, which acts on
+the demo ledger — so several judges can scan the same QR at once and all see the
+same story move.
 
 ## The Happiness API
 
@@ -133,4 +179,6 @@ GET  /api/senses         actuation log
 GET  /api/channel        #kindred messages
 GET  /api/events         SSE: live actuations and nudges
 GET  /api/health
+GET  /api/pairing        LAN URLs for the two-device demo (public)
+GET  /qr.svg?url=…       QR for any URL, rendered server-side (public)
 ```

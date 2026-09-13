@@ -268,6 +268,32 @@ async function openTeam(id) {
   render();
 }
 
+/** Pull the QR up mid-demo so a judge can open the phone app on their own device. */
+async function setupPairing() {
+  let pairing;
+  try { pairing = await api('/api/pairing'); } catch { return; }
+  if (!pairing.reachable) return;
+
+  const btn = $('#pair-btn');
+  btn.hidden = false;
+  btn.onclick = () => {
+    const pop = el('div', { class: 'pair-pop', onclick: () => pop.remove() },
+      el('section', { class: 'card', onclick: (e) => e.stopPropagation() },
+        el('h3', {}, 'Open the phone app'),
+        el('img', {
+          src: '/qr.svg?scale=7&url=' + encodeURIComponent(pairing.appUrl),
+          width: 240, height: 240, alt: 'QR code for the Kindred phone app'
+        }),
+        el('code', { class: 'pair-url' }, pairing.appUrl),
+        el('p', { class: 'tiny faint', style: 'margin:14px 0 0' },
+          'Same wifi as this laptop. Anything logged on the phone lands here live.'),
+        el('button', { class: 'btn', style: 'width:100%;margin-top:14px', onclick: () => pop.remove() }, 'Close')
+      )
+    );
+    document.body.append(pop);
+  };
+}
+
 // ----------------------------------------------------------------- chrome
 
 function renderTabs() {
@@ -296,6 +322,8 @@ function render() {
     `${state.me.user.avatar} ${state.me.user.name} · ${state.me.team?.name || 'no team'} · ${state.me.team?.org_name || ''} · ` +
     `${state.me.engine === 'openai' ? 'GPT brain' : 'local brain'} · ${state.me.slack ? 'Slack connected' : 'in-app #kindred'}`;
   $('#logout').onclick = async () => { await api('/api/auth/logout', { method: 'POST' }); location.href = '/'; };
+
+  setupPairing();
 
   const [team, channel, ledger] = await Promise.all([
     api('/api/team'), api('/api/channel'), api('/api/ledger')

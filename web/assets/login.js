@@ -32,6 +32,15 @@ $('#accounts').append(...DEMO.map((d) =>
   )
 ));
 
+// Two-device pairing: only shown when this machine actually has a LAN address,
+// so it never offers a URL a phone cannot reach.
+api('/api/pairing').then(({ appUrl, reachable }) => {
+  if (!reachable) return;
+  $('#pair-qr').src = '/qr.svg?scale=6&url=' + encodeURIComponent(appUrl);
+  $('#pair-url').textContent = appUrl;
+  $('#pair').hidden = false;
+}).catch(() => { /* pairing is a convenience, never block the login */ });
+
 forms.judge.onsubmit = async (e) => {
   e.preventDefault();
   $('#judge-error').textContent = '';
