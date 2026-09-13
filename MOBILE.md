@@ -99,7 +99,7 @@ one response — so the client can update every screen from a single call:
 {
   "moment":    { "id": 526, "label": "Walk outside", "meaning": 2.25, ... },
   "reframe":   "The rain is not ruining your walk. It is giving you permission to slow down.",
-  "engine":    "local",              // or "openai" when OPENAI_API_KEY is set
+  "engine":    "local",              // or "openai" when OPENROUTER_API_KEY is set
   "actuation": { "sense": "touch", "device": "token", "action": "turn" },
   "ledger":    { "balance": 45.6, "interest": {...}, "risk": {...}, ... }
 }
