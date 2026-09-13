@@ -6,6 +6,8 @@ import { routes } from './routes.js';
 import { sseHandler } from './bus.js';
 import { currentUser } from './auth.js';
 import { seed } from './seed.js';
+import { lanAddresses, primaryAddress } from './net.js';
+import { svg as qrSvg } from './qr.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const webDir = join(root, 'web');
@@ -75,6 +77,18 @@ const server = http.createServer(async (req, res) => {
   try {
     if (path === '/api/events') return sseHandler(req, res);
 
+    if (path === '/qr.svg') {
+      const target = url.searchParams.get('url') || `http://${primaryAddress()}:${PORT}/app`;
+      try {
+        const body = qrSvg(target, { scale: Number(url.searchParams.get('scale')) || 8 });
+        res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'no-store' });
+        return res.end(body);
+      } catch (err) {
+        res.writeHead(400, { 'content-type': 'text/plain' });
+        return res.end(String(err.message || err));
+      }
+    }
+
     const handler = routes[key];
     if (handler) {
       const body = await readBody(req);
@@ -105,14 +119,33 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+// 0.0.0.0 so a phone on the same network can reach the laptop running this.
+server.listen(PORT, '0.0.0.0', () => {
   const engine = process.env.OPENAI_API_KEY ? 'openai' : 'local reframe engine';
+  const lan = lanAddresses();
+  const host = primaryAddress();
+
+  const onThisMachine = [
+    `  entry point   http://localhost:${PORT}/`,
+    `  phone app     http://localhost:${PORT}/app`,
+    `  dashboard     http://localhost:${PORT}/dashboard`
+  ].join('\n');
+
+  const onOtherDevices = lan.length
+    ? [
+        '',
+        '',
+        '  ── on another device, same wifi ──────────────',
+        ...lan.map((a) => `  ${a.name.padEnd(12)}http://${a.address}:${PORT}`),
+        `  phone app     http://${host}:${PORT}/app`,
+        `  scan instead  the login page shows a QR for that URL`
+      ].join('\n')
+    : '\n  (no network interface found — this machine is localhost only)';
+
   console.log(`
   Kindred — the happiness ledger
   ──────────────────────────────────────────────
-  entry point   http://localhost:${PORT}/
-  phone app     http://localhost:${PORT}/app
-  dashboard     http://localhost:${PORT}/dashboard
+${onThisMachine}${onOtherDevices}
 
   demo login    aina@kindred.app / kindred
   judge access  passcode "${process.env.JUDGE_PASSCODE || 'kindred'}"

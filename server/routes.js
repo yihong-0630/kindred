@@ -6,6 +6,8 @@ import { teamLedger, orgLedger, findTeaPair } from './team.js';
 import { reframeMoment, weeklyStatement, teaInvite, actuationFor, engineName } from './agent.js';
 import { postToSlack } from './slack.js';
 import { emit } from './bus.js';
+import { lanAddresses, primaryAddress } from './net.js';
+import { svg as qrSvg } from './qr.js';
 
 const now = () => new Date().toISOString();
 const json = (res, code, body) => {
@@ -194,6 +196,21 @@ export const routes = {
       slackConnected: Boolean(process.env.SLACK_WEBHOOK_URL),
       messages: all(`SELECT n.*, u.name AS user_name, u.avatar FROM nudges n LEFT JOIN users u ON u.id = n.user_id
                      WHERE n.scope != 'personal' OR n.kind = 'statement' ORDER BY n.id DESC LIMIT 30`)
+    });
+  },
+
+  /**
+   * Two-device demo: the laptop shows this, the phone scans it. Public on
+   * purpose — the phone needs it before anyone has logged in.
+   */
+  'GET /api/pairing': async (req, res, { url }) => {
+    const port = url.port || process.env.PORT || 4000;
+    const host = primaryAddress();
+    json(res, 200, {
+      appUrl: `http://${host}:${port}/app`,
+      dashboardUrl: `http://${host}:${port}/dashboard`,
+      addresses: lanAddresses().map((a) => ({ ...a, url: `http://${a.address}:${port}` })),
+      reachable: host !== 'localhost'
     });
   },
 
