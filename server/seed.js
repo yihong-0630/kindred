@@ -1,6 +1,7 @@
 import { db, get, run, all } from './db.js';
 import { hashPassword } from './auth.js';
 import { RITUALS, BY_KEY } from './rituals.js';
+import { seedPractices } from './practices.js';
 
 const DAY = 86400000;
 
@@ -95,10 +96,14 @@ function seedMomentsFor(user, profile) {
 }
 
 export function seed({ force = false } = {}) {
+  // The evidence library is independent of the demo org: it is idempotent by
+  // slug, survives a reseed, and never overwrites a harvested row.
+  const practices = seedPractices();
+
   if (force) {
     db.exec('DELETE FROM sessions; DELETE FROM nudges; DELETE FROM actuations; DELETE FROM moments; DELETE FROM users; DELETE FROM teams; DELETE FROM orgs;');
   }
-  if (get('SELECT count(*) AS n FROM users').n > 0) return { seeded: false };
+  if (get('SELECT count(*) AS n FROM users').n > 0) return { seeded: false, practices };
 
   const now = new Date().toISOString();
   run('INSERT INTO orgs (name) VALUES (?)', 'Northwind Collective');
@@ -123,7 +128,7 @@ export function seed({ force = false } = {}) {
     teamIds['Kindred Core'], 'Hackathon Judge', 'judge@kindred.app', hashPassword(process.env.JUDGE_PASSCODE || 'kindred'), 'judge', '⚖️', now);
 
   const counts = get('SELECT (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM moments) AS moments');
-  return { seeded: true, ...counts };
+  return { seeded: true, practices, ...counts };
 }
 
 if (process.argv[1] && process.argv[1].endsWith('seed.js')) {

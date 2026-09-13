@@ -3,12 +3,12 @@ import { currentUser, issueToken, login, judgeLogin, sessionCookie, clearCookie 
 import { RITUALS, BY_KEY, SENSES, PERMA } from './rituals.js';
 import { ledgerFor, momentsFor, balanceOf, streakOf } from './ledger.js';
 import { teamLedger, orgLedger, findTeaPair } from './team.js';
-import { reframeMoment, weeklyStatement, teaInvite, actuationFor, engineName, checkinSummary, recommendationNote } from './agent.js';
+import { reframeMoment, weeklyStatement, teaInvite, actuationFor, engineName, modelName, checkinSummary, recommendationNote } from './agent.js';
 import {
   planQuestions, QUESTIONS, readSignals, recordAnswer, openCheckin, answersFor,
   finishCheckin, localSummary, todaysCheckin, recentCheckins, localDay
 } from './checkin.js';
-import { recommendFor, saveRecommendations, recommendationsFor, acceptRecommendation, uptakeFor } from './recommend.js';
+import { recommendFor, saveRecommendations, recommendationsFor, acceptRecommendation, uptakeFor, withSources } from './recommend.js';
 import { harvest, researchEnabled, practiceStats, verifyAllLinks, TOPICS } from './research.js';
 import { postToSlack } from './slack.js';
 import { emit } from './bus.js';
@@ -43,6 +43,27 @@ function recordActuation(userId, act) {
     userId, act.sense, act.device, act.action, act.detail || '', now());
   emit('actuation', { userId, ...act });
   return act;
+}
+
+/**
+ * The agent's one message of the day: find two people who are both low, write
+ * the invite, put the kettle on for both of them, and post it.
+ *
+ * Lives here rather than in the route because two things trigger it now — the
+ * dashboard button, and finishing a check-in that reports a low morning.
+ */
+async function runTeaScan(teamId) {
+  const pair = findTeaPair(teamId);
+  if (!pair) return { found: false, reason: 'Nobody on this team is drifting right now. The agent stays quiet.' };
+
+  const { text, engine } = await teaInvite(pair[0], pair[1]);
+  const delivery = await postToSlack(text);
+  const nudge = saveNudge({
+    scope: 'team', team_id: teamId, audience: pair.map((p) => p.name).join(', '),
+    channel: delivery.channel, kind: 'invite', text, engine, delivered: delivery.delivered
+  });
+  for (const p of pair) recordActuation(p.id, { sense: 'taste', device: 'kettle', action: 'brew', detail: 'The shared cup' });
+  return { found: true, pair, nudge, delivery, engine };
 }
 
 function saveNudge(n) {
@@ -84,7 +105,7 @@ export const routes = {
     const user = currentUser(req);
     if (!user) return json(res, 401, { error: 'not_authenticated' });
     const team = user.team_id ? get('SELECT t.*, o.name AS org_name, o.id AS org_id FROM teams t JOIN orgs o ON o.id = t.org_id WHERE t.id = ?', user.team_id) : null;
-    json(res, 200, { user, team, canSeeOrg: canSeeOrg(user), engine: engineName(), slack: Boolean(process.env.SLACK_WEBHOOK_URL) });
+    json(res, 200, { user, team, canSeeOrg: canSeeOrg(user), engine: engineName(), model: modelName(), slack: Boolean(process.env.SLACK_WEBHOOK_URL) });
   },
 
   'GET /api/people': async (req, res) => {
@@ -225,8 +246,21 @@ export const routes = {
     saveNudge({ scope: 'personal', user_id: user.id, team_id: user.team_id, channel: 'app', kind: 'statement', text: summary, engine });
     emit('checkin', { userId: user.id, mood: signals.mood, energy: signals.energy });
 
+    // A low morning, just reported, is the freshest signal the team layer will
+    // ever get — so the agent looks for someone to pair them with immediately
+    // rather than waiting to be asked. A Slack outage must never cost someone
+    // their read-back, so this can fail without failing the check-in.
+    let tea = null;
+    if (user.team_id && (signals.mood <= 2 || signals.energy === 'flat')) {
+      try {
+        tea = await runTeaScan(user.team_id);
+      } catch (err) {
+        console.error('! tea scan after check-in', err);
+      }
+    }
+
     json(res, 200, {
-      done: true, signals, summary, engine,
+      done: true, signals, summary, engine, tea,
       checkin: get('SELECT * FROM checkins WHERE id = ?', checkin.id),
       recommendations: recommendationsFor(checkin.id),
       step: answers.length, total: script.length
@@ -291,9 +325,38 @@ export const routes = {
     const tag = url.searchParams.get('tag');
     const rows = all("SELECT * FROM practices WHERE link_status != 'dead' ORDER BY credibility DESC, id");
     json(res, 200, {
-      practices: tag ? rows.filter((p) => p.tags.split(',').includes(tag)) : rows,
+      practices: (tag ? rows.filter((p) => p.tags.split(',').includes(tag)) : rows).map(withSources),
       stats: practiceStats(),
       research: { enabled: researchEnabled(), topics: TOPICS.length }
+    });
+  },
+
+  /**
+   * The raw citation table behind the library, flattened: every practice's own
+   * source plus every supporting source, newest harvest first. Truncated on the
+   * server so the modal never pulls the whole database over the wire.
+   */
+  'GET /api/citations': async (req, res, { url }) => {
+    const user = requireUser(req, res); if (!user) return;
+    const limit = Math.min(Number(url.searchParams.get('limit')) || 60, 300);
+    // A source stored twice — once on the practice, once as a supporting row —
+    // is one citation, not two. The table is deduplicated by URL so it reads as
+    // a bibliography rather than a join result.
+    const union = `SELECT source_title AS title, source_publisher AS publisher, source_url AS url,
+                          evidence, link_status, engine, action AS practice, credibility
+                   FROM practices
+                   UNION ALL
+                   SELECT s.title, s.publisher, s.url, s.evidence, s.link_status,
+                          'exa' AS engine, p.action AS practice, s.credibility
+                   FROM practice_sources s JOIN practices p ON p.id = s.practice_id`;
+    const rows = all(`SELECT title, publisher, url, evidence, link_status, engine, practice,
+                             max(credibility) AS credibility
+                      FROM (${union}) WHERE link_status != 'dead'
+                      GROUP BY url ORDER BY credibility DESC, publisher LIMIT ?`, limit);
+    json(res, 200, {
+      citations: rows,
+      total: get(`SELECT count(*) AS n FROM (SELECT url FROM (${union}) WHERE link_status != 'dead' GROUP BY url)`).n,
+      shown: rows.length
     });
   },
 
@@ -345,18 +408,7 @@ export const routes = {
    */
   'POST /api/agent/scan': async (req, res, { body }) => {
     const user = requireUser(req, res); if (!user) return;
-    const teamId = Number(body.teamId) || user.team_id;
-    const pair = findTeaPair(teamId);
-    if (!pair) return json(res, 200, { found: false, reason: 'Nobody on this team is drifting right now. The agent stays quiet.' });
-
-    const { text, engine } = await teaInvite(pair[0], pair[1]);
-    const delivery = await postToSlack(text);
-    const nudge = saveNudge({
-      scope: 'team', team_id: teamId, audience: pair.map((p) => p.name).join(', '),
-      channel: delivery.channel, kind: 'invite', text, engine, delivered: delivery.delivered
-    });
-    for (const p of pair) recordActuation(p.id, { sense: 'taste', device: 'kettle', action: 'brew', detail: 'The shared cup' });
-    json(res, 200, { found: true, pair, nudge, delivery, engine });
+    json(res, 200, await runTeaScan(Number(body.teamId) || user.team_id));
   },
 
   // ------------------------------------------------------ enterprise layer
@@ -448,6 +500,7 @@ export const routes = {
   'GET /api/health': async (req, res) => json(res, 200, {
     ok: true,
     engine: engineName(),
+    model: modelName(),
     slack: Boolean(process.env.SLACK_WEBHOOK_URL),
     users: get('SELECT count(*) AS n FROM users').n,
     moments: get('SELECT count(*) AS n FROM moments').n
